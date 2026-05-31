@@ -199,13 +199,20 @@ host-routes all those vhosts on one IP.
 ### Bring it up
 
 ```bash
-cp .env.example .env        # set DB_USER, DB_PASSWORD, API_SECRET
+cp .env.example .env        # set DB_PASSWORD and API_SECRET
 docker compose up -d --build
 docker compose logs -f wwfc # watch each service report "Listening"
 ```
 
+> **Keep `DB_USER=wiilink`.** The vendored `server/schema.sql` hardcodes table
+> ownership to a `wiilink` role, so the database user must be `wiilink` or the
+> schema import fails and the `db` container reports *unhealthy*. If you already
+> ran `up` with a different user (or any failed first init), the data volume is
+> half-initialized and won't re-import — reset it with
+> `docker compose down -v` and bring it up again.
+
 The Postgres schema (`server/schema.sql`) is imported automatically on first
-run. The two containers talk over a private `wfcnet` bridge network, and **only**
+run (and **only** on first run, when the data volume is empty). The two containers talk over a private `wfcnet` bridge network, and **only**
 the WFC ports the DS/Wii need are published to the host:
 
 | Proto | Port(s)                     | Service                                   |
