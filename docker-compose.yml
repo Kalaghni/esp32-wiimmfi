@@ -20,10 +20,10 @@ services:
       - pgdata:/var/lib/postgresql/data
       # Upstream schema is imported automatically on first init only.
       - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    # Published only on the host's loopback so the host-networked wwfc can reach
-    # it at 127.0.0.1:5432. NOT exposed to the LAN.
-    ports:
-      - "127.0.0.1:5432:5432"
+    # No published ports: Postgres is reachable only by wwfc over the private
+    # wfcnet bridge (as host "db"), never from the host or LAN.
+    networks:
+      - wfcnet
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d wwfc"]
       interval: 5s
@@ -37,18 +37,27 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Host networking is REQUIRED, not a preference: the GameSpy services
-    # (QR2 "available", NatNeg, server browser) correlate each client by its
-    # real source IP. On a Docker bridge every client is SNATed to the bridge
-    # gateway (e.g. 172.x.0.1), so the AVAILABLE reply/matchmaking can't get
-    # back to the console and the game fails with error 20100. Host mode lets
-    # the server see real client addresses and binds the WFC ports
-    # (80, 28910, 29900, 29901, 29920 TCP; 27900, 27901 UDP) straight on the
-    # box's LAN IP. Postgres stays private (loopback only, above).
-    network_mode: host
+    networks:
+      - wfcnet
+    # Publish ONLY the WFC ports the DS/Wii actually connect to. Everything else
+    # (Postgres, the internal RPC channels on 29997-29999) stays on the private
+    # bridge and is never exposed.
+    ports:
+      - "80:80/tcp"        # NAS auth + Pokemon HTTP (GTS, Mystery Gift)
+      - "28910:28910/tcp"  # serverbrowser
+      - "29900:29900/tcp"  # gpcm (login)
+      - "29901:29901/tcp"  # gpsp (profile search)
+      - "29920:29920/tcp"  # gamestats
+      - "27900:27900/udp"  # qr2 (heartbeats)
+      - "27901:27901/udp"  # natneg (matchmaking)
+      # NOTE: on a bridge network Docker SNATs inbound UDP, so the server sees
+      # the docker gateway instead of the real client IP/port. Login/conntest
+      # and most play work fine; peer-to-peer matchmaking (NatNeg) is the part
+      # that can suffer. If matchmaking misbehaves, switch wwfc to a macvlan
+      # network (gives it its own LAN IP) or back to network_mode: host.
     environment:
       BIND_ADDRESS: 0.0.0.0
-      DB_ADDRESS: 127.0.0.1   # db's loopback-published port (host netns)
+      DB_ADDRESS: db        # resolves to the db service over the wfcnet bridge
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       API_SECRET: ${API_SECRET}
@@ -59,6 +68,11 @@ services:
       # clients. Without them, pre-patch games with the WiiLink wfc-patcher.
       # - ./server/payload:/app/payload:ro
     restart: unless-stopped
+
+# Private bridge network for container-to-container traffic (wwfc <-> db).
+networks:
+  wfcnet:
+    driver: bridge
 
 volumes:
   pgdata:

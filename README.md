@@ -212,8 +212,8 @@ docker compose logs -f wwfc # watch each service report "Listening"
 > `docker compose down -v` and bring it up again.
 
 The Postgres schema (`server/schema.sql`) is imported automatically on first
-run (and **only** on first run, when the data volume is empty). `wwfc` uses
-**host networking**, binding the WFC ports directly on the box's LAN IP:
+run (and **only** on first run, when the data volume is empty). The two containers talk over a private `wfcnet` bridge network, and **only**
+the WFC ports the DS/Wii need are published to the host:
 
 | Proto | Port(s)                     | Service                                   |
 |-------|-----------------------------|-------------------------------------------|
@@ -221,13 +221,15 @@ run (and **only** on first run, when the data volume is empty). `wwfc` uses
 | TCP   | 28910 / 29900 / 29901 / 29920 | serverbrowser / gpcm / gpsp / gamestats |
 | UDP   | 27900 / 27901               | qr2 (heartbeats) / natneg (matchmaking)   |
 
-> **Why host networking (not a bridge)?** The GameSpy services correlate each
-> client by its real source IP. On a Docker bridge, every client is SNATed to
-> the bridge gateway (`172.x.0.1`), so the QR2 "available" reply and matchmaking
-> can't get back to the console and the game dies with **error 20100**. Host
-> mode lets the server see real client addresses. Postgres stays private — it's
-> published only on `127.0.0.1:5432` (loopback), never to the LAN — and the
-> internal RPC channels (`29997`–`29999`) stay on loopback inside the server.
+Postgres has **no published ports** — it's reachable only by `wwfc` over the
+bridge (as host `db`). The internal RPC channels (`29997`–`29999`) stay inside
+the container. So nothing but the table above is exposed to the LAN.
+
+> Trade-off: on a bridge network Docker SNATs inbound UDP, so the server sees
+> the docker gateway rather than the real client IP/port. Login, conntest, and
+> most play are unaffected; only peer-to-peer **matchmaking (NatNeg)** can
+> suffer. If matchmaking misbehaves, give `wwfc` its own LAN IP via a **macvlan**
+> network, or switch it back to `network_mode: host`.
 
 ### Point the bridge at it
 
