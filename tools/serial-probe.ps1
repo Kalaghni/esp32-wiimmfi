@@ -13,6 +13,11 @@
 .PARAMETER List
     Just enumerate and identify the available COM ports, then exit.
 
+.PARAMETER Watch
+    Snapshot current ports, then watch for ~30s for a NEW port to appear as you
+    plug the board in. The fastest way to find which COM port is the ESP32 (and
+    to prove it enumerates at all).
+
 .PARAMETER Port
     The port to open, e.g. COM5. If omitted, the script lists ports and exits.
 
@@ -41,7 +46,8 @@ param(
     [int]$Baud = 115200,
     [int]$Seconds = 15,
     [switch]$Reset,
-    [switch]$List
+    [switch]$List,
+    [switch]$Watch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,17 +91,23 @@ function Get-PortInventory {
 
     foreach ($n in $names) {
         $info = $pnp[$n]
-        $chip = 'Unknown (driver may be missing)'
-        if ($info -and $info.Vid) {
-            if     ($KnownVid.ContainsKey($info.Vid))           { $chip = $KnownVid[$info.Vid] }
-            else                                                { $chip = "VID:$($info.Vid) PID:$($info.Pid)" }
+        $name = if ($info) { $info.Name } else { '(no PnP match)' }
+        # Bluetooth virtual ports are never an ESP32 - flag them so they aren't
+        # mistaken for the board (a very common cause of "Write timeout").
+        $isBt = $name -match 'Bluetooth'
+        $chip = if ($isBt) { 'Bluetooth virtual port  (NOT your ESP32)' }
+                else        { 'Unknown (driver may be missing)' }
+        if (-not $isBt -and $info -and $info.Vid) {
+            if     ($KnownVid.ContainsKey($info.Vid)) { $chip = $KnownVid[$info.Vid] }
+            else                                      { $chip = "VID:$($info.Vid) PID:$($info.Pid)" }
         }
         [pscustomobject]@{
-            Port  = $n
-            Chip  = $chip
-            Vid   = if ($info) { $info.Vid } else { $null }
-            Pid   = if ($info) { $info.Pid } else { $null }
-            Name  = if ($info) { $info.Name } else { '(no PnP match)' }
+            Port        = $n
+            Chip        = $chip
+            Vid         = if ($info) { $info.Vid } else { $null }
+            Pid         = if ($info) { $info.Pid } else { $null }
+            Name        = $name
+            IsBluetooth = [bool]$isBt
         }
     }
 }
@@ -129,15 +141,65 @@ if (-not $inv) {
 foreach ($row in $inv) {
     $open = Test-PortOpenable $row.Port
     $state = if ($open) { 'free' } else { 'IN USE / access denied' }
+    $chipColor = if ($row.IsBluetooth) { 'DarkGray' } else { 'White' }
     $color = if ($open) { 'Green' } else { 'Red' }
-    Write-Host ('  {0,-6}  {1}' -f $row.Port, $row.Chip)
+    Write-Host ('  {0,-6}  {1}' -f $row.Port, $row.Chip) -ForegroundColor $chipColor
     Write-Host ('          {0}   [{1}]' -f $row.Name, $state) -ForegroundColor $color
 }
 Write-Host ''
 
+# Is there anything that could actually be an ESP32 (i.e. not Bluetooth)?
+$candidates = @($inv | Where-Object { -not $_.IsBluetooth })
+if ($candidates.Count -eq 0) {
+    Write-Host 'No USB-UART port detected - every port above is a Bluetooth virtual port.' -ForegroundColor Red
+    Write-Host 'Your ESP32 is NOT enumerating. This is the real problem (uploading to a' -ForegroundColor Yellow
+    Write-Host 'Bluetooth COM port is what produced the "Write timeout").' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host 'Fix, in order:' -ForegroundColor Yellow
+    Write-Host '  1. Re-run with -Watch, then plug the board in, to catch the new port.'
+    Write-Host '  2. Install the USB-UART driver for your board''s chip:'
+    Write-Host '       CP2102/CP210x -> Silicon Labs CP210x VCP driver'
+    Write-Host '       CH340/CH9102  -> WCH CH340 VCP driver'
+    Write-Host '     (Open Device Manager; a yellow-! device appears when you plug in.)'
+    Write-Host '  3. Use a DATA USB cable (many are charge-only) and a rear/direct USB port.'
+    Write-Host '  4. ESP32-S2/S3 native-USB boards: hold BOOT while plugging in to enumerate.'
+    Write-Host ''
+}
+
+# --- Watch mode: detect a port appearing when you plug the board in ---
+if ($Watch) {
+    $before = [System.IO.Ports.SerialPort]::GetPortNames()
+    Write-Host '=== Watch mode ===' -ForegroundColor Cyan
+    Write-Host ('Baseline ports: {0}' -f ($before -join ', '))
+    Write-Host 'Now (re)plug the ESP32 USB cable. Watching 30s for a new port...' -ForegroundColor Yellow
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $found = $false
+    while ($sw.Elapsed.TotalSeconds -lt 30) {
+        Start-Sleep -Milliseconds 500
+        $now = [System.IO.Ports.SerialPort]::GetPortNames()
+        $new = @($now | Where-Object { $_ -notin $before })
+        if ($new.Count -gt 0) {
+            $found = $true
+            foreach ($p in $new) {
+                $row = Get-PortInventory | Where-Object { $_.Port -eq $p }
+                Write-Host ''
+                Write-Host ("NEW PORT: {0}  ->  {1}" -f $p, ($row.Chip)) -ForegroundColor Green
+                Write-Host ("That is almost certainly your ESP32. Flash with -p {0}." -f $p) -ForegroundColor Green
+            }
+            break
+        }
+    }
+    if (-not $found) {
+        Write-Host ''
+        Write-Host 'No new port appeared in 30s. The board is not enumerating:' -ForegroundColor Red
+        Write-Host '  -> driver missing, charge-only cable, dead USB port, or board not powered.' -ForegroundColor Yellow
+    }
+    return
+}
+
 if ($List -or -not $Port) {
     if (-not $Port) {
-        Write-Host 'Tip: re-run with  -Port <COMx>  to open and read, add -Reset to reboot first.' -ForegroundColor DarkGray
+        Write-Host 'Tip: -Watch (plug in to find the port), or -Port <COMx> -Reset to read it.' -ForegroundColor DarkGray
     }
     return
 }
