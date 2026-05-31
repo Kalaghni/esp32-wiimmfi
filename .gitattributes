@@ -1,0 +1,12 @@
+# Normalize line endings so Windows checkouts don't break Linux/container files.
+# Shell scripts must be LF or their shebang gets a trailing CR and fails to exec.
+*.sh        text eol=lf
+*.tmpl      text eol=lf
+Dockerfile  text eol=lf
+*.sql       text eol=lf
+
+# Let Git handle the rest normally; force LF for these source types too.
+*.ino       text eol=lf
+*.go        text eol=lf
+*.yml       text eol=lf
+*.md        text

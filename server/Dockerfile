@@ -29,6 +29,10 @@ COPY game_list.tsv ./game_list.tsv
 COPY motd.txt ./motd.txt
 COPY config.xml.tmpl ./config.xml.tmpl
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh && mkdir -p state
+# Strip any CR line endings (Windows/CRLF checkouts) so the shebang and the
+# script body run under /bin/sh, then make it executable.
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh ./config.xml.tmpl \
+    && chmod +x ./docker-entrypoint.sh \
+    && mkdir -p state
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
