@@ -1,0 +1,60 @@
+# Self-hosted Nintendo WFC server for the esp32-wiimmfi bridge.
+#
+# Run this on a Linux LAN box (e.g. a Raspberry Pi / home server). Point the
+# ESP32 sketch's WFC_REDIRECT_IP at this box's LAN IP, and the DS will reach
+# every *.nintendowifi.net service here.
+#
+#   cp .env.example .env   # then edit credentials
+#   docker compose up -d --build
+#
+# See the README "Self-hosted server" section for the full walkthrough.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wwfc
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Upstream schema is imported automatically on first init only.
+      - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    # Keep Postgres off the LAN: only the host-networked wwfc needs it, via
+    # loopback. Remove the "127.0.0.1:" prefix only if you know what you're doing.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d wwfc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  wwfc:
+    build:
+      context: ./server
+    depends_on:
+      db:
+        condition: service_healthy
+    # Host networking: the GameSpy UDP services (NatNeg/QR2) are source IP/port
+    # sensitive and Docker's userland NAT can break matchmaking. Host mode also
+    # binds the WFC ports (80, 28910, 29900, 29901, 29920 TCP; 27900, 27901 UDP)
+    # straight onto the box's LAN IP.
+    network_mode: host
+    environment:
+      BIND_ADDRESS: 0.0.0.0
+      DB_ADDRESS: 127.0.0.1   # reaches the db container via its published loopback port
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      API_SECRET: ${API_SECRET}
+    volumes:
+      # Persist runtime state (session/group .gob files, uuid) across restarts.
+      - ./server/state:/app/state
+      # Optional: drop SBCM/NAS payload binaries here to auto-patch unmodified
+      # clients. Without them, pre-patch games with the WiiLink wfc-patcher.
+      # - ./server/payload:/app/payload:ro
+    restart: unless-stopped
+
+volumes:
+  pgdata:

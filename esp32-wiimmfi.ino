@@ -50,11 +50,18 @@ static const bool AP_USE_WPA2 = false;
 static const char* AP_PASSWORD = "changeme123";
 
 // --- WFC redirect target ---
-// Default: 167.235.229.36 = WiiLink / RiiConnect24, which routes WFC to Wiimmfi.
-// Alternative: Kaeru WFC at 178.62.43.212.
+// All *.nintendowifi.net A-record lookups are answered with this single IP.
+//
+// SELF-HOSTING (recommended): run the WFC server bundled in this repo
+// (docker-compose.yml + server/) on a LAN box and set this to that box's LAN
+// IP, e.g. IPAddress(192, 168, 1, 50). See the README "Self-hosted server"
+// section. The server binds all the *.nintendowifi.net vhosts/ports on that one
+// address, which is exactly what this single-IP redirect expects.
+//
+// COMMUNITY SERVICE (default below): 167.235.229.36 = WiiLink / RiiConnect24,
+// which routes WFC to Wiimmfi. Alternative: Kaeru WFC at 178.62.43.212.
 // NOTE: these community-run IPs drift over time. Verify against the current
-// published lists for whichever revival service you intend to use before
-// trusting this value.
+// published lists for whichever revival service you intend to use.
 static const IPAddress WFC_REDIRECT_IP(167, 235, 229, 36);
 
 // --- Upstream resolver used for everything we don't redirect ---

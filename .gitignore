@@ -1,0 +1,12 @@
+# Local secrets / deployment config
+.env
+
+# Generated at container start from server/config.xml.tmpl
+server/config.xml
+
+# Runtime state and optional payloads (not source)
+server/state/
+server/payload/
+
+# Build artifacts
+server/wwfc

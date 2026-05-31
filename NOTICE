@@ -1,0 +1,32 @@
+esp32-wiimmfi
+=============
+
+The ESP32 sketch (esp32-wiimmfi.ino) and project documentation are this
+project's own work.
+
+Bundled third-party component
+-----------------------------
+
+The server/ directory is a vendored copy (via `git subtree`) of:
+
+    WiiLink24/wfc-server
+    https://github.com/WiiLink24/wfc-server
+    Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+
+Its license text is preserved at server/LICENSE and its copyright headers are
+left intact. The AGPL is a network-copyleft license: if you distribute this
+repository or run a MODIFIED version of the server as a network service that
+others interact with, you must offer the corresponding source of the server
+under the AGPL-3.0.
+
+Files added by this project under server/ (our own, to deploy the upstream
+code) are:
+
+    server/Dockerfile
+    server/docker-entrypoint.sh
+    server/config.xml.tmpl
+
+To update the vendored server from upstream:
+
+    git subtree pull --prefix=server \
+        https://github.com/WiiLink24/wfc-server.git main --squash

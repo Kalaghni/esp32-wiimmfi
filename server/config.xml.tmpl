@@ -1,0 +1,56 @@
+<Config>
+     <!--
+          GENERATED FILE NOTICE
+          This template is rendered to config.xml at container start by
+          docker-entrypoint.sh (envsubst). Edit values via the .env file in the
+          repo root, not here. See the repo README "Self-hosted server" section.
+     -->
+
+     <!-- Bind address for the GameSpy services and NAS HTTP server.
+          Bind-only (it is NOT advertised to clients), so 0.0.0.0 is correct for
+          a host-networked container: it accepts on the box's LAN IP, which is
+          the IP the DS resolves *.nintendowifi.net to. -->
+     <gsAddress>${BIND_ADDRESS}</gsAddress>
+     <nasAddress>${BIND_ADDRESS}</nasAddress>
+     <nasPort>80</nasPort>
+
+     <!-- HTTPS is unused for a LAN setup: keep it disabled so no certs/DER
+          files are required. -->
+     <nasAddressHttps>127.0.0.1</nasAddressHttps>
+     <nasPortHttps>443</nasPortHttps>
+     <enableHttps>false</enableHttps>
+     <enableHttpsExploitWii>false</enableHttpsExploitWii>
+     <enableHttpsExploitDS>false</enableHttpsExploitDS>
+
+     <!-- Integrated payload server (blank = deprecated built-in). The SBCM
+          auto-patch payloads are not bundled; pre-patch games with the WiiLink
+          wfc-patcher instead. See README caveats. -->
+     <payloadServerAddress></payloadServerAddress>
+
+     <!-- Internal RPC channels. MUST stay on loopback; never expose these. -->
+     <frontendAddress>127.0.0.1:29998</frontendAddress>
+     <frontendBackendAddress>127.0.0.1:29999</frontendBackendAddress>
+     <backendAddress>127.0.0.1:29999</backendAddress>
+     <backendFrontendAddress>127.0.0.1:29998</backendFrontendAddress>
+
+     <!-- Allow default Dolphin device keys (eases emulator testing). -->
+     <allowDefaultDolphinKeys>true</allowDefaultDolphinKeys>
+
+     <!-- Database (the Postgres service in docker-compose). -->
+     <username>${DB_USER}</username>
+     <password>${DB_PASSWORD}</password>
+     <databaseAddress>${DB_ADDRESS}</databaseAddress>
+     <databaseName>wwfc</databaseName>
+
+     <!-- Logging. -->
+     <logLevel>4</logLevel>
+     <logOutput>StdOut</logOutput>
+
+     <!-- API secret for the (loopback-only) admin API. -->
+     <apiSecret>${API_SECRET}</apiSecret>
+
+     <!-- Event reporting: log to DB, no Discord webhook. -->
+     <eventReporting>
+          <logToDatabase>true</logToDatabase>
+     </eventReporting>
+</Config>

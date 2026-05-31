@@ -111,6 +111,10 @@ to open so the AP still comes up.
 > redirection "works" but the game can't connect, a stale IP is the first
 > thing to check.
 
+Or skip the community services entirely and **run your own server** — see
+[Self-hosted server](#self-hosted-server) below; set `WFC_REDIRECT_IP` to your
+server box's LAN IP.
+
 ---
 
 ## Build & flash
@@ -175,8 +179,81 @@ redirected confirms the game's download traffic is going through the bridge.
 - **No DNS logs at all** — verify the DS is actually using `192.168.4.1` for
   DNS (it should via DHCP) and that nothing else occupies UDP 53.
 
+## Self-hosted server
+
+Instead of pointing the bridge at a community revival IP, you can run the WFC
+backend yourself on a LAN machine (a Raspberry Pi or any always-on Linux box).
+This repo vendors [WiiLink24/wfc-server](https://github.com/WiiLink24/wfc-server)
+— an open-source (AGPL-3.0) reimplementation of the GameSpy + NAS services Nintendo
+WFC ran on — under `server/`, with Docker tooling to bring it up.
+
+The ESP32 already handles DNS, so the server needs **no DNS of its own**: the DS
+resolves every `*.nintendowifi.net` name to your server box, and the server
+host-routes all those vhosts on one IP.
+
+### Requirements
+
+- A Linux host on your LAN with **Docker** + **Docker Compose**.
+- That host's **LAN IP** (`hostname -I` or `ip route get 1.1.1.1`).
+
+### Bring it up
+
+```bash
+cp .env.example .env        # set DB_USER, DB_PASSWORD, API_SECRET
+docker compose up -d --build
+docker compose logs -f wwfc # watch each service report "Listening"
+```
+
+The Postgres schema (`server/schema.sql`) is imported automatically on first
+run. The server binds these ports on the host (via `network_mode: host`):
+
+| Proto | Port(s)                     | Service                                   |
+|-------|-----------------------------|-------------------------------------------|
+| TCP   | 80                          | NAS auth + Pokémon HTTP (GTS, Mystery Gift) |
+| TCP   | 28910 / 29900 / 29901 / 29920 | serverbrowser / gpcm / gpsp / gamestats |
+| UDP   | 27900 / 27901               | qr2 (heartbeats) / natneg (matchmaking)   |
+
+Postgres (`5432`) is published only on `127.0.0.1`, and the internal RPC ports
+(`29997`–`29999`) stay on loopback — none of those are exposed to the LAN.
+
+### Point the bridge at it
+
+In `esp32-wiimmfi.ino` set `WFC_REDIRECT_IP` to the server box's LAN IP and
+re-flash:
+
+```cpp
+static const IPAddress WFC_REDIRECT_IP(192, 168, 1, 50); // your server box
+```
+
+### Verify
+
+```bash
+# From another LAN host (replace <IP>):
+curl -v http://<IP>/                                    # NAS responds
+curl -s -H 'Host: conntest.nintendowifi.net' http://<IP>/   # conntest 200
+nc -vz <IP> 28910 29900 29901 29920                     # TCP services up
+```
+
+Fastest game-side test is an emulator (melonDS / Dolphin) with its DNS set to
+`<IP>`, bypassing the ESP32 to isolate the server. Then test real hardware
+through the bridge: the ESP32 serial log should show
+`... -> REDIRECTED to <IP>`, and `docker compose logs -f wwfc` should show the
+sequence **NAS auth → GPCM login → serverbrowser/QR2 → NatNeg**.
+
+### Caveats
+
+- **Updating the server:** it's vendored via `git subtree`. Pull upstream with
+  `git subtree pull --prefix=server https://github.com/WiiLink24/wfc-server.git main --squash`,
+  then rebuild and re-verify.
+- **Unmodified game discs/carts** may need patching with the
+  [WiiLink wfc-patcher](https://github.com/WiiLink24/wfc-patcher-wii); the SBCM
+  auto-patch payloads are **not** bundled here. Gen IV DS Pokémon still need the
+  open AP (see [AP security](#ap-security-open-vs-wpa2)).
+- **License:** `server/` is **AGPL-3.0** (see `NOTICE`). Running a *modified*
+  server that others connect to triggers the AGPL source-offer obligation.
+
 ## Legal
 
-For use with hardware and game copies you own. Wiimmfi and the WFC-revival
-services listed here are independent community projects and are not affiliated
-with Nintendo.
+For use with hardware and game copies you own. Wiimmfi, WiiLink, and the other
+WFC-revival projects referenced here are independent community efforts and are
+not affiliated with Nintendo.
