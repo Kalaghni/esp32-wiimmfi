@@ -71,13 +71,34 @@ Open `esp32-wiimmfi.ino` and edit the config constants near the top:
 |-------------------|------------------------------------------------------------------------|
 | `STA_SSID`        | Your home Wi-Fi SSID (the internet uplink).                            |
 | `STA_PASSWORD`    | Your home Wi-Fi password.                                              |
-| `AP_SSID`         | Name of the open network the DS joins. Default `"DS-WIIMMFI"`.         |
+| `AP_SSID`         | Name of the network the DS joins. Default `"DS-WIIMMFI"`.              |
+| `AP_USE_WPA2`     | `false` = open AP (required for Gen IV). `true` = WPA2 (Gen V/DSi/3DS).|
+| `AP_PASSWORD`     | WPA2 passphrase (8–63 chars), used only when `AP_USE_WPA2` is `true`.  |
 | `WFC_REDIRECT_IP` | WFC-revival target. Default `167.235.229.36` (WiiLink/RiiConnect24).   |
 | `UPSTREAM_DNS`    | Resolver for non-redirected lookups. Default `1.1.1.1`.                |
 | `AP_IP`/`AP_MASK` | AP network. Defaults `192.168.4.1` / `255.255.255.0`.                  |
 
 > ⚠️ **Do not commit your real Wi-Fi credentials to this public repo.** Keep
 > `STA_SSID`/`STA_PASSWORD` local, or load them another way.
+
+### AP security (open vs. WPA2)
+
+The AP defaults to **open** because the original DS's Gen IV Pokémon games
+(Diamond/Pearl/Platinum/HeartGold/SoulSilver) only support open or WEP, and the
+ESP32 can't host WEP in SoftAP mode — so open is the only mode a Gen IV DS can
+join.
+
+If **every** client you use supports WPA2 — **Gen V** (Black/White/Black2/White2),
+DSi, or 3DS — you can secure the AP instead:
+
+```cpp
+static const bool  AP_USE_WPA2 = true;          // turn on WPA2-PSK
+static const char* AP_PASSWORD = "your-passphrase";  // 8–63 characters
+```
+
+A Gen IV DS Lite will **not** be able to join while WPA2 is enabled. If the
+passphrase is shorter than 8 characters the sketch logs a warning and falls back
+to open so the AP still comes up.
 
 ### WFC redirect target
 
@@ -123,7 +144,8 @@ arduino-cli monitor -p /dev/ttyUSB0 -c baudrate=115200
    connecting, and NAPT enabling.
 2. On the DS, open a WFC-enabled game's **Nintendo Wi-Fi Connection Setup**.
 3. **Search for an Access Point** and pick **`DS-WIIMMFI`** (or your `AP_SSID`).
-   No WEP key is needed — it's an open network.
+   On the default open AP no key is needed. If you enabled `AP_USE_WPA2`, enter
+   your `AP_PASSWORD` (Gen V / DSi / 3DS only).
 4. Save and run the connection test. The DS gets `192.168.4.1` as both gateway
    and DNS via DHCP, so its WFC lookups hit this bridge.
 

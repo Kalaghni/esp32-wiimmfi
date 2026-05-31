@@ -15,10 +15,12 @@
  *
  * Only the Arduino core's WiFi.h and WiFiUdp.h are used -- no extra libraries.
  *
- * NOTE ON THE OPEN AP: the AP is intentionally an OPEN (unencrypted) network.
+ * NOTE ON AP SECURITY: the AP defaults to an OPEN (unencrypted) network.
  * The ESP32 Wi-Fi driver cannot host WEP in SoftAP mode, and the original DS
- * WFC only supported open/WEP networks. The DS connects to open networks fine,
- * so an open AP is the simplest thing that works here.
+ * WFC only supported open/WEP networks -- Gen IV Pokemon games (D/P/Pt/HG/SS)
+ * can ONLY join open here, so open is the safe default. Newer clients that
+ * support WPA2 (Gen V Pokemon B/W/B2/W2, DSi, 3DS) can instead use a secured
+ * AP by setting AP_USE_WPA2 = true and AP_PASSWORD below.
  */
 
 #include <WiFi.h>
@@ -30,8 +32,22 @@
 static const char* STA_SSID     = "YOUR_HOME_SSID";
 static const char* STA_PASSWORD = "YOUR_HOME_PASSWORD";
 
-// --- AP the DS connects to (open network) ---
+// --- AP the DS connects to ---
 static const char* AP_SSID = "DS-WIIMMFI";
+
+// AP security mode.
+//   false -> OPEN network (no encryption). Required for original DS WFC Gen IV
+//            Pokemon games (Diamond/Pearl/Platinum/HeartGold/SoulSilver), which
+//            only support open or WEP and CANNOT connect to a WPA/WPA2 AP.
+//   true  -> WPA2-PSK. Only works for consoles/games that support WPA2, e.g.
+//            Gen V Pokemon (Black/White/Black2/White2) and the DSi/3DS. A DS
+//            Lite running a Gen IV title will not see/join this AP.
+// Leave this false unless every client you care about supports WPA2.
+static const bool AP_USE_WPA2 = false;
+
+// WPA2 passphrase for the AP, used only when AP_USE_WPA2 is true.
+// Must be 8-63 characters (WPA2-PSK requirement); ignored in open mode.
+static const char* AP_PASSWORD = "changeme123";
 
 // --- WFC redirect target ---
 // Default: 167.235.229.36 = WiiLink / RiiConnect24, which routes WFC to Wiimmfi.
@@ -81,10 +97,28 @@ void setup() {
   // its WFC DNS queries land on our server above.
   WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_MASK);
 
-  // Open network: passing no password (or "") leaves the AP unencrypted.
-  bool apOk = WiFi.softAP(AP_SSID);
-  Serial.printf("[ap] SSID \"%s\" (open) %s, IP %s\n",
-                AP_SSID, apOk ? "up" : "FAILED",
+  // Bring up the AP. In open mode we pass no password, which leaves the AP
+  // unencrypted (the only thing Gen IV DS games can join). In WPA2 mode we
+  // pass AP_PASSWORD; the ESP32 core defaults SoftAP encryption to WPA2-PSK
+  // when a valid (8-63 char) passphrase is supplied. (WEP is intentionally not
+  // offered: the ESP32 Wi-Fi driver cannot host WEP in SoftAP mode.)
+  bool apOk;
+  const char* apMode;
+  if (AP_USE_WPA2 && strlen(AP_PASSWORD) >= 8) {
+    apOk = WiFi.softAP(AP_SSID, AP_PASSWORD);
+    apMode = "WPA2";
+  } else {
+    if (AP_USE_WPA2) {
+      // Asked for WPA2 but the passphrase is too short to be valid -- fall back
+      // to open rather than silently failing to start the AP.
+      Serial.println(F("[ap] WARNING: AP_PASSWORD too short for WPA2 (need 8+ "
+                       "chars); falling back to OPEN"));
+    }
+    apOk = WiFi.softAP(AP_SSID);
+    apMode = "open";
+  }
+  Serial.printf("[ap] SSID \"%s\" (%s) %s, IP %s\n",
+                AP_SSID, apMode, apOk ? "up" : "FAILED",
                 WiFi.softAPIP().toString().c_str());
 
   // ---- Join home Wi-Fi (uplink) ----
