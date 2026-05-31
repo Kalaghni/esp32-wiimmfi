@@ -205,7 +205,8 @@ docker compose logs -f wwfc # watch each service report "Listening"
 ```
 
 The Postgres schema (`server/schema.sql`) is imported automatically on first
-run. The server binds these ports on the host (via `network_mode: host`):
+run. The two containers talk over a private `wfcnet` bridge network, and **only**
+the WFC ports the DS/Wii need are published to the host:
 
 | Proto | Port(s)                     | Service                                   |
 |-------|-----------------------------|-------------------------------------------|
@@ -213,8 +214,15 @@ run. The server binds these ports on the host (via `network_mode: host`):
 | TCP   | 28910 / 29900 / 29901 / 29920 | serverbrowser / gpcm / gpsp / gamestats |
 | UDP   | 27900 / 27901               | qr2 (heartbeats) / natneg (matchmaking)   |
 
-Postgres (`5432`) is published only on `127.0.0.1`, and the internal RPC ports
-(`29997`–`29999`) stay on loopback — none of those are exposed to the LAN.
+Postgres has **no published ports** — it's reachable only by `wwfc` over the
+bridge (as host `db`). The internal RPC channels (`29997`–`29999`) stay inside
+the container. So nothing but the table above is exposed to the LAN.
+
+> Trade-off: on a bridge network Docker SNATs inbound UDP, so the server sees
+> the docker gateway rather than the real client IP/port. Login, conntest, and
+> most play are unaffected; only peer-to-peer **matchmaking (NatNeg)** can
+> suffer. If matchmaking misbehaves, give `wwfc` its own LAN IP via a **macvlan**
+> network, or switch it back to `network_mode: host`.
 
 ### Point the bridge at it
 

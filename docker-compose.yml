@@ -20,10 +20,10 @@ services:
       - pgdata:/var/lib/postgresql/data
       # Upstream schema is imported automatically on first init only.
       - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    # Keep Postgres off the LAN: only the host-networked wwfc needs it, via
-    # loopback. Remove the "127.0.0.1:" prefix only if you know what you're doing.
-    ports:
-      - "127.0.0.1:5432:5432"
+    # No published ports: Postgres is reachable only by wwfc over the private
+    # wfcnet bridge (as host "db"), never from the host or LAN.
+    networks:
+      - wfcnet
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d wwfc"]
       interval: 5s
@@ -37,14 +37,27 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Host networking: the GameSpy UDP services (NatNeg/QR2) are source IP/port
-    # sensitive and Docker's userland NAT can break matchmaking. Host mode also
-    # binds the WFC ports (80, 28910, 29900, 29901, 29920 TCP; 27900, 27901 UDP)
-    # straight onto the box's LAN IP.
-    network_mode: host
+    networks:
+      - wfcnet
+    # Publish ONLY the WFC ports the DS/Wii actually connect to. Everything else
+    # (Postgres, the internal RPC channels on 29997-29999) stays on the private
+    # bridge and is never exposed.
+    ports:
+      - "80:80/tcp"        # NAS auth + Pokemon HTTP (GTS, Mystery Gift)
+      - "28910:28910/tcp"  # serverbrowser
+      - "29900:29900/tcp"  # gpcm (login)
+      - "29901:29901/tcp"  # gpsp (profile search)
+      - "29920:29920/tcp"  # gamestats
+      - "27900:27900/udp"  # qr2 (heartbeats)
+      - "27901:27901/udp"  # natneg (matchmaking)
+      # NOTE: on a bridge network Docker SNATs inbound UDP, so the server sees
+      # the docker gateway instead of the real client IP/port. Login/conntest
+      # and most play work fine; peer-to-peer matchmaking (NatNeg) is the part
+      # that can suffer. If matchmaking misbehaves, switch wwfc to a macvlan
+      # network (gives it its own LAN IP) or back to network_mode: host.
     environment:
       BIND_ADDRESS: 0.0.0.0
-      DB_ADDRESS: 127.0.0.1   # reaches the db container via its published loopback port
+      DB_ADDRESS: db        # resolves to the db service over the wfcnet bridge
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       API_SECRET: ${API_SECRET}
@@ -55,6 +68,11 @@ services:
       # clients. Without them, pre-patch games with the WiiLink wfc-patcher.
       # - ./server/payload:/app/payload:ro
     restart: unless-stopped
+
+# Private bridge network for container-to-container traffic (wwfc <-> db).
+networks:
+  wfcnet:
+    driver: bridge
 
 volumes:
   pgdata:
